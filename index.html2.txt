@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vortex Tube - 100% Visible (No Dependencies)</title>
+    <style>
+        * { margin: 0; padding: 0; }
+        body { 
+            background: #000; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        #simulation {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.9);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 100;
+            font-size: 14px;
+        }
+        .color-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+        }
+        .color-box {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border-radius: 4px;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="simulation">
+        <div id="info">
+            <h3 style="margin-bottom: 10px;">Vortex Tube Simulation</h3>
+            <div class="color-item"><div class="color-box" style="background: #4DA6FF;"></div> Input (25°C) → Right Side</div>
+            <div class="color-item"><div class="color-box" style="background: #0059FF;"></div> Cold Output (10°C) → Left Side</div>
+            <div class="color-item"><div class="color-box" style="background: #FF4422;"></div> Hot Output (60°C) → Right Side</div>
+        </div>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script>
+        // ======================
+        // 纯原生JS实现 - 无任何外部依赖
+        // ======================
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 设置画布尺寸
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // 涡流管参数（匹配你的图纸）
+        const CENTER_X = canvas.width / 2;
+        const CENTER_Y = canvas.height / 2;
+        const TUBE_LENGTH = 400;
+        const TUBE_RADIUS = 60;
+        const PARTICLE_COUNT = 800;
+
+        // 粒子类
+        class Particle {
+            constructor() {
+                // 初始位置（右侧进气口）
+                this.x = CENTER_X + TUBE_LENGTH/2 - 30 + (Math.random()-0.5)*40;
+                this.y = CENTER_Y + (Math.random()-0.5)*TUBE_RADIUS*0.8;
+                
+                // 速度
+                this.vx = (Math.random()-0.5)*2;
+                this.vy = (Math.random()-0.5)*2;
+                this.vz = -1.5; // 轴向速度
+                
+                // 温度（初始室温25°C）
+                this.temp = 25;
+                this.size = 3;
+            }
+
+            update() {
+                // 计算到中心的距离（用于涡流效应）
+                const dx = this.x - CENTER_X;
+                const dy = this.y - CENTER_Y;
+                const distFromCenter = Math.hypot(dx, dy - CENTER_Y);
+                const normDist = distFromCenter / TUBE_RADIUS;
+
+                // 1. 涡流旋转
+                const angle = Math.atan2(dy, dx);
+                const spinSpeed = 2.5;
+                this.vx = -Math.sin(angle) * spinSpeed * (1 - normDist*0.3);
+                this.vy = Math.cos(angle) * spinSpeed * (1 - normDist*0.3);
+
+                // 2. 温度分离（核心冷，外层热）
+                if (normDist < 0.35) {
+                    // 中心冷区（10°C）
+                    this.temp = 10 + (25-10)*normDist*2;
+                } else {
+                    // 外层热区（最高60°C）
+                    this.temp = 25 + (60-25)*normDist*normDist;
+                }
+
+                // 3. 轴向流动（冷热分离）
+                if (normDist > 0.5) {
+                    // 外层热气流 → 右侧出口
+                    this.x += 0.05;
+                } else {
+                    // 中心冷气流 → 左侧出口
+                    this.x -= 0.1;
+                }
+
+                // 4. 更新位置
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // 5. 管壁碰撞
+                if (distFromCenter > TUBE_RADIUS) {
+                    const nx = dx / distFromCenter;
+                    const ny = dy / distFromCenter;
+                    this.x = CENTER_X + nx * (TUBE_RADIUS - 2);
+                    this.y = CENTER_Y + ny * (TUBE_RADIUS - 2);
+                    this.vx *= -0.9;
+                    this.vy *= -0.9;
+                }
+
+                // 6. 出口重置（循环流动）
+                if (this.x < CENTER_X - TUBE_LENGTH/2 - 50 || this.x > CENTER_X + TUBE_LENGTH/2 + 50) {
+                    this.x = CENTER_X + TUBE_LENGTH/2 - 30 + (Math.random()-0.5)*40;
+                    this.y = CENTER_Y + (Math.random()-0.5)*TUBE_RADIUS*0.8;
+                    this.temp = 25;
+                }
+            }
+
+            draw() {
+                // 根据温度设置颜色
+                let color;
+                if (this.temp <= 15) {
+                    // 冷端（10°C）- 深蓝色
+                    color = '#0059FF';
+                } else if (this.temp <= 28) {
+                    // 进气（25°C）- 浅蓝色
+                    color = '#4DA6FF';
+                } else if (this.temp <= 45) {
+                    // 暖区 - 橙色
+                    color = '#FF9933';
+                } else {
+                    // 热端（60°C）- 红色
+                    color = '#FF4422';
+                }
+
+                // 绘制粒子
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 创建粒子数组
+        const particles = [];
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            particles.push(new Particle());
+        }
+
+        // 绘制涡流管轮廓
+        function drawTube() {
+            ctx.strokeStyle = '#335577';
+            ctx.lineWidth = 3;
+            
+            // 绘制管子
+            ctx.beginPath();
+            ctx.rect(
+                CENTER_X - TUBE_LENGTH/2,
+                CENTER_Y - TUBE_RADIUS,
+                TUBE_LENGTH,
+                TUBE_RADIUS * 2
+            );
+            ctx.stroke();
+
+            // 标记进气口（右侧）
+            ctx.fillStyle = '#4DA6FF';
+            ctx.fillRect(CENTER_X + TUBE_LENGTH/2 - 20, CENTER_Y - 10, 20, 20);
+            
+            // 标记冷出口（左侧）
+            ctx.fillStyle = '#0059FF';
+            ctx.fillRect(CENTER_X - TUBE_LENGTH/2, CENTER_Y - 10, 20, 20);
+            
+            // 标记热出口（右侧下方）
+            ctx.fillStyle = '#FF4422';
+            ctx.fillRect(CENTER_X + TUBE_LENGTH/2 - 20, CENTER_Y + 20, 20, 20);
+        }
+
+        // 动画循环
+        function animate() {
+            // 清空画布
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制管子
+            drawTube();
+
+            // 更新并绘制所有粒子
+            particles.forEach(particle => {
+                particle.update();
+                particle.draw();
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        // 启动动画
+        animate();
+    </script>
+</body>
+</html>
